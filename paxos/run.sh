@@ -27,8 +27,11 @@ echo "starting learners..."
 
 ./learner.sh 1 "$conf" >../learn1 &
 ./learner.sh 2 "$conf" >../learn2 &
-
+#
+# ./learner.sh 1 "$conf" &
+# ./learner.sh 2 "$conf" &
 sleep 1
+
 echo "starting proposers..."
 
 ./proposer.sh 1 "$conf" &
