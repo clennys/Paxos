@@ -4,8 +4,6 @@ import socket
 import struct
 import json
 from enum import Enum
-import uuid
-import time
 import math
 
 
@@ -16,7 +14,6 @@ class MessageType(Enum):
     DECIDE = "PHASE_3"
     CLIENT_VALUE = "CLIENT_VALUE"
 
-
 def encode_json_msg(type, **kwargs):
     return json.dumps({"type": type.value, **kwargs}).encode()
 
@@ -25,21 +22,13 @@ def decode_json_msg(msg):
     parsed_msg = json.loads(msg.decode())
     # TODO: Check for correct type
     parsed_msg["type"] = MessageType(parsed_msg["type"])
+    if "c_rnd" in parsed_msg:
+        parsed_msg["c_rnd"] = tuple(parsed_msg["c_rnd"])
+    if "rnd" in parsed_msg:
+        parsed_msg["rnd"] = tuple(parsed_msg["rnd"])
+    if "v_rnd" in parsed_msg and parsed_msg["v_rnd"] is not None:
+        parsed_msg["v_rnd"] = tuple(parsed_msg["v_rnd"])
     return parsed_msg
-
-def generate_uuid(id):
-    """Generate a custom UUID-like ID using the process ID and current timestamp."""
-    timestamp = int(time.time() * 1000)  # milliseconds
-    random_part = uuid.uuid4().hex[:6]  # Add randomness for uniqueness if needed
-    return f"{timestamp}-{id}-{random_part}"
-
-def generate_initial_id():
-    """Generate an initial ID that is always smaller than any other ID."""
-    timestamp = 0 
-    process_id = 0 
-    random_part = 0
-    return f"{timestamp}-{process_id}-{random_part}"
-
 
 def mcast_receiver(hostport):
     """create a multicast socket listening to the address"""
@@ -75,27 +64,27 @@ def acceptor(config, id):
     # state = {}
     r = mcast_receiver(config["acceptors"])
     s = mcast_sender()
-    rnd = generate_initial_id()
-    v_rnd = generate_initial_id()
+    rnd = (0, id)
+    v_rnd = None
     v_val = None
     while True:
         msg = decode_json_msg(r.recv(2**16))
         if msg["type"] == MessageType.PREPARE:
-            print("-> acceptor", id, " Received: ", MessageType.PREPARE)
-            if msg["c_rnd"] >= rnd:
+            if msg["c_rnd"] > rnd:
                 rnd = msg["c_rnd"]
                 promise_msg = encode_json_msg(
                     MessageType.PROMISE, rnd=rnd, v_rnd=v_rnd, v_val=v_val
                 )
+                print("-> acceptor", id, " Received:", MessageType.PREPARE, "Rnd:", rnd)
                 s.sendto(promise_msg, config["proposers"])
         elif msg["type"] == MessageType.ACCEPT_REQUEST:
-            print("-> acceptor", id, " Received: ", MessageType.ACCEPT_REQUEST)
             if msg["c_rnd"] >= rnd:
-                v_rnd = rnd = msg["c_rnd"]
+                v_rnd = msg["c_rnd"]
                 v_val = msg["c_val"]
                 accepted_msg = encode_json_msg(
                     MessageType.DECIDE, v_rnd=v_rnd, v_val=v_val
                 )
+                print("-> acceptor", id, " Received: ", MessageType.ACCEPT_REQUEST, " v_rnd: ", v_rnd, " v_val: ", v_val)
                 s.sendto(accepted_msg, config["learners"])
 
 
@@ -103,29 +92,27 @@ def proposer(config, id):
     print("-> proposer", id)
     r = mcast_receiver(config["proposers"])
     s = mcast_sender()
-    c_rnd = generate_initial_id()
+    c_rnd = (0, id)
     c_val = None
     promises = []
 
     while True:
         msg = decode_json_msg(r.recv(2**16))
         if msg["type"] == MessageType.CLIENT_VALUE:
-            print("-> proposer", id, " Received: ", MessageType.CLIENT_VALUE)
             c_val = msg["value"]
-            c_rnd = generate_uuid(id)
+            c_rnd = (c_rnd[0] + 1, c_rnd[1])
             prepare_msg = encode_json_msg(MessageType.PREPARE, c_rnd=c_rnd)
+            print("-> proposer", id, " Received: ", MessageType.CLIENT_VALUE, "c_rnd: ", c_rnd)
             s.sendto(prepare_msg, config["acceptors"])
         elif msg["type"] == MessageType.PROMISE and msg["rnd"] == c_rnd:
-            print("-> proposer", id, " Received: ", MessageType.PROMISE)
             promises.append(msg)
+            print("-> proposer", id, "promises count:", len(promises), "for c_rnd", c_rnd)
             # if len(promises) > len(config["acceptors"]) // 2:
             if len(promises) > math.ceil(3 / 2):
-                k = max((p["v_rnd"] for p in promises), default=0)
-                print("k: ", k)
-                if k != "0-0-0":
-                    print("c_val in: ", c_val)
+                k = max((p["v_rnd"] for p in promises if p["v_rnd"]), default=None)
+                if k:
                     c_val = next(p["v_val"] for p in promises if p["v_rnd"] == k)
-                print("c_val out: ", c_val)
+                print("-> proposer", id, " Received:", MessageType.PROMISE, "c_rnd:", c_rnd, "c_val:", c_val)
                 accept_msg = encode_json_msg(
                     MessageType.ACCEPT_REQUEST, c_rnd=c_rnd, c_val=c_val
                 )

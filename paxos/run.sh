@@ -25,11 +25,11 @@ echo "starting acceptors..."
 sleep 1
 echo "starting learners..."
 
-./learner.sh 1 "$conf" >../learn1 &
-./learner.sh 2 "$conf" >../learn2 &
+# ./learner.sh 1 "$conf" >../learn1 &
+# ./learner.sh 2 "$conf" >../learn2 &
 #
-# ./learner.sh 1 "$conf" &
-# ./learner.sh 2 "$conf" &
+./learner.sh 1 "$conf" &
+./learner.sh 2 "$conf" &
 sleep 1
 
 echo "starting proposers..."
@@ -42,7 +42,7 @@ sleep 10
 echo "starting clients..."
 
 ./client.sh 1 "$conf" <../prop1 &
-./client.sh 2 "$conf" <../prop2 &
+# ./client.sh 2 "$conf" <../prop2 &
 
 sleep 5
 
