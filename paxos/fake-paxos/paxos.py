@@ -5,6 +5,11 @@ import struct
 import json
 from enum import Enum
 import math
+import time
+import random as rd
+import signal
+import atexit
+import sys
 
 
 class MessageType(Enum):
@@ -13,6 +18,8 @@ class MessageType(Enum):
     ACCEPT_REQUEST = "PHASE_2A"
     DECIDE = "PHASE_3"
     CLIENT_VALUE = "CLIENT_VALUE"
+    # CATCHUP_REQUEST = "CATCHUP_REQUEST"
+    # CATCHUP_VALUE = "CATCHUP_VALUE"
 
 
 def encode_json_msg(type, **kwargs):
@@ -115,7 +122,9 @@ def acceptor(config, id):
                     " v_val:",
                     states[seq]["v_val"],
                 )
+                # NOTE: Used optimization of Paxos, where acceptors send decision directly to learners
                 s.sendto(accepted_msg, config["learners"])
+                s.sendto(accepted_msg, config["proposers"])
 
 
 def proposer(config, id):
@@ -127,6 +136,8 @@ def proposer(config, id):
     c_rnd = {}
     c_val = {}
     promises = {}
+    pending = {}
+    learned = []
 
     while True:
         msg = decode_json_msg(r.recv(2**16))
@@ -148,12 +159,13 @@ def proposer(config, id):
                 "seq,",
                 seq,
             )
+            pending[seq] = time.time()
             s.sendto(prepare_msg, config["acceptors"])
-        # TODO: CHECK
         elif msg["type"] == MessageType.PROMISE and msg["rnd"] == c_rnd[msg["seq"]]:
             seq = msg["seq"]
             if seq not in promises:
                 promises[seq] = []
+
             promises[seq].append(msg)
 
             print(
@@ -166,8 +178,9 @@ def proposer(config, id):
                 "for c_rnd",
                 c_rnd[seq],
             )
+            # TODO: Number of acceptors hardocoded -> pass number of acceptors with config?
             # if len(promises) > len(config["acceptors"]) // 2:
-            if len(promises[seq]) > math.ceil(3 / 2):
+            if len(promises[seq]) >= math.ceil(3 / 2):
                 k = max((p["v_rnd"] for p in promises[seq] if p["v_rnd"]), default=None)
                 if k:
                     c_val[seq] = next(
@@ -192,19 +205,83 @@ def proposer(config, id):
                     c_val=c_val[seq],
                 )
                 s.sendto(accept_msg, config["acceptors"])
+        elif msg["type"] == MessageType.DECIDE:
+            seq = msg["seq"]
+            if seq not in learned:
+                learned.append(seq)
+
+        # TODO: Ensure safety by proposing again after timeout.
+        # NOTE: Client sends proposed value to both proposers.
+        for seq in list(pending.keys()):
+            if seq in learned:
+                pending.pop(seq)
+            else:
+                elapsed_time = time.time() - pending[seq]
+                if elapsed_time > rd.randint(
+                    5, 10
+                ):  # Try again after a random time between 5 - 10 seconds
+                    c_rnd_cnt = (c_rnd_cnt[0] + 1, c_rnd_cnt[1])
+                    c_rnd[seq] = c_rnd_cnt
+                    prepare_msg = encode_json_msg(
+                        MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
+                    )
+                    print(
+                        "-> proposer",
+                        id,
+                        " Received: ",
+                        MessageType.CLIENT_VALUE,
+                        "c_rnd: ",
+                        c_rnd[seq],
+                        "seq,",
+                        seq,
+                    )
+                    pending[seq] = time.time()
+                    s.sendto(prepare_msg, config["acceptors"])
 
 
 def learner(config, id):
     r = mcast_receiver(config["learners"])
-    AB_val = {}
+    # s = mcast_sender()
+    learned = {}
+    # last_seq = -1
+
+    # TODO: Change: Not so nice workaround, but it works
+    def print_learned():
+        for key in sorted(learned, key=lambda x: (x[1], x[0])):
+            print(learned[key])
+        sys.stdout.flush()
+
+    def handle_exit_signal(signum, frame):
+        print_learned()
+        sys.exit(0)
+
+    atexit.register(print_learned)
+    signal.signal(signal.SIGINT, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal) 
+
     while True:
         msg = decode_json_msg(r.recv(2**16))
         if msg["type"] == MessageType.DECIDE:
-            AB_val[msg["seq"]] = msg["v_val"]
-            print(
-                f"Learner {id}: Learned about {msg['v_val']} in rnd {msg['v_rnd']} with seq: {msg['seq']}"
-            )
-        sys.stdout.flush()
+            seq = msg["seq"]
+            learned[seq] = msg["v_val"]
+            # print(msg["v_val"])
+            # sys.stdout.flush()
+
+        # TODO: Unfinished learner catchup mechanism -> catchup from other learners or acceptors?
+        #     last_seq = max(last_seq, seq[0])
+        #     missing_seq = [s for s in range(last_seq + 1) if (s, id) not in learned]
+        #     for m_seq in missing_seq:
+        #         request_msg = encode_json_msg(
+        #         MessageType.CATCHUP_REQUEST, seq=(m_seq, id)
+        #     )
+        #         s.sendto(request_msg, config["learners"])
+        # elif msg["type"] == MessageType.CATCHUP_VALUE:
+        #     seq = msg["seq"]
+        #     learned[seq] = msg["v_val"]
+
+        # print(
+        #     f"Learner {id}: Learned about {msg['v_val']} in rnd {msg['v_rnd']} with seq: {msg['seq']}"
+        # )
 
 
 def client(config, id):
@@ -214,7 +291,9 @@ def client(config, id):
     for value in sys.stdin:
         value = value.strip()
         prop_id += 1
-        print("client %s: sending %s to proposers with prop_id %s" % (id, value, prop_id))
+        print(
+            "client %s: sending %s to proposers with prop_id %s" % (id, value, prop_id)
+        )
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
