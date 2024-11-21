@@ -9,6 +9,65 @@ import time
 import random as rd
 import signal
 import sys
+from loguru import logger
+
+logger.remove()
+
+logger.add(
+    sink=sys.stdout,
+    format="<green>[{time:HH:mm:ss}]</green> <cyan>{level}</cyan> <bold><yellow>[PROPOSER]</yellow></bold> <level>{message}</level>",
+    filter=lambda record: record["extra"].get("role") == "proposer",
+)
+
+logger.add(
+    sink=sys.stdout,
+    format="<green>[{time:HH:mm:ss}]</green> <cyan>{level}</cyan> <bold><blue>[LEARNER]</blue></bold> <level>{message}</level>",
+    filter=lambda record: record["extra"].get("role") == "learner",
+)
+
+logger.add(
+    sink=sys.stdout,
+    format="<green>[{time:HH:mm:ss}]</green> <cyan>{level}</cyan> <bold><red>[ACCEPTOR]</red></bold> <level>{message}</level>",
+    filter=lambda record: record["extra"].get("role") == "acceptor",
+)
+
+logger.add(
+    sink=sys.stdout,
+    format="<green>[{time:HH:mm:ss}]</green> <cyan>{level}</cyan> <bold><green>[CLIENT]</green></bold> <level>{message}</level>",
+    filter=lambda record: record["extra"].get("role") == "client",
+)
+
+
+def log_proposer_debug(message):
+    logger.bind(role="proposer").debug(message)
+
+
+def log_learner_debug(message):
+    logger.bind(role="learner").debug(message)
+
+
+def log_acceptor_debug(message):
+    logger.bind(role="acceptor").debug(message)
+
+
+def log_client_debug(message):
+    logger.bind(role="client").info(message)
+
+
+def log_proposer_info(message):
+    logger.bind(role="proposer").info(message)
+
+
+def log_learner_info(message):
+    logger.bind(role="learner").info(message)
+
+
+def log_acceptor_info(message):
+    logger.bind(role="acceptor").info(message)
+
+
+def log_client_info(message):
+    logger.bind(role="client").info(message)
 
 
 class MessageType(Enum):
@@ -69,7 +128,7 @@ def parse_cfg(cfgpath):
 
 
 def acceptor(config, id):
-    print("-> acceptor", id)
+    log_acceptor_info(f"{id} started")
     states = {}
     decision = {}
     r = mcast_receiver(config["acceptors"])
@@ -89,15 +148,8 @@ def acceptor(config, id):
                     v_rnd=states[seq]["v_rnd"],
                     v_val=states[seq]["v_val"],
                 )
-                print(
-                    "-> acceptor",
-                    id,
-                    " Received:",
-                    "seq",
-                    seq,
-                    MessageType.PREPARE,
-                    "Rnd:",
-                    states[seq]["rnd"],
+                log_acceptor_debug(
+                    f"{id} Received: {seq} of Type {MessageType.PREPARE} in Rnd: {states[seq]['rnd']}"
                 )
                 s.sendto(promise_msg, config["proposers"])
         elif msg["type"] == MessageType.ACCEPT_REQUEST:
@@ -111,17 +163,8 @@ def acceptor(config, id):
                     v_rnd=states[seq]["v_rnd"],
                     v_val=states[seq]["v_val"],
                 )
-                print(
-                    "-> acceptor",
-                    id,
-                    "seq",
-                    seq,
-                    "Received:",
-                    MessageType.ACCEPT_REQUEST,
-                    "v_rnd:",
-                    states[seq]["v_rnd"],
-                    " v_val:",
-                    states[seq]["v_val"],
+                log_acceptor_debug(
+                    f"{id} Received {seq} of Type {MessageType.ACCEPT_REQUEST} in v_rnd: {states[seq]['v_rnd']} with v_val: {states[seq]['v_val']}"
                 )
                 if seq not in decision:
                     decision[seq] = msg["c_val"]
@@ -140,7 +183,7 @@ def acceptor(config, id):
 
 
 def proposer(config, id):
-    print("-> proposer", id)
+    log_proposer_info(f"{id} started")
     r = mcast_receiver(config["proposers"])
     r.setblocking(False)
     s = mcast_sender()
@@ -163,15 +206,8 @@ def proposer(config, id):
                 prepare_msg = encode_json_msg(
                     MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
                 )
-                print(
-                    "-> proposer",
-                    id,
-                    " Received: ",
-                    MessageType.CLIENT_VALUE,
-                    "c_rnd: ",
-                    c_rnd[seq],
-                    "seq,",
-                    seq,
+                log_proposer_debug(
+                    f"{id} Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq: {seq}",
                 )
                 pending[seq] = time.time()
                 s.sendto(prepare_msg, config["acceptors"])
@@ -182,35 +218,18 @@ def proposer(config, id):
 
                 promises[seq].append(msg)
 
-                print(
-                    "-> proposer",
-                    id,
-                    "seq",
-                    seq,
-                    "promises count:",
-                    len(promises[seq]),
-                    "for c_rnd",
-                    c_rnd[seq],
-                )
                 # TODO: Number of acceptors hardocoded -> pass number of acceptors with config?
                 n_promises = len([p for p in promises[seq] if msg["rnd"] == p["rnd"]])
                 if n_promises >= math.ceil(3 / 2):
-                    k = max((p["v_rnd"] for p in promises[seq] if p["v_rnd"]), default=None)
+                    k = max(
+                        (p["v_rnd"] for p in promises[seq] if p["v_rnd"]), default=None
+                    )
                     if k:
                         c_val[seq] = next(
                             p["v_val"] for p in promises[seq] if p["v_rnd"] == k
                         )
-                    print(
-                        "-> proposer",
-                        id,
-                        "seq",
-                        seq,
-                        " Received:",
-                        MessageType.PROMISE,
-                        "c_rnd:",
-                        c_rnd[seq],
-                        "c_val:",
-                        c_val[seq],
+                    log_proposer_debug(
+                        f"{id} seq {seq} Received: {MessageType.PROMISE} c_rnd: {c_rnd[seq]} c_val: {c_val[seq]}"
                     )
                     accept_msg = encode_json_msg(
                         MessageType.ACCEPT_REQUEST,
@@ -223,7 +242,7 @@ def proposer(config, id):
                 seq = msg["seq"]
                 if seq not in learned:
                     learned.append(seq)
-            
+
         except BlockingIOError:
             pass
 
@@ -240,15 +259,8 @@ def proposer(config, id):
                     prepare_msg = encode_json_msg(
                         MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
                     )
-                    print(
-                        "-> proposer",
-                        id,
-                        " Received: ",
-                        MessageType.CLIENT_VALUE,
-                        "c_rnd: ",
-                        c_rnd[seq],
-                        "seq,",
-                        seq,
+                    log_proposer_debug(
+                        f"{id} Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq {seq}"
                     )
                     pending[seq] = time.time()
                     s.sendto(prepare_msg, config["acceptors"])
@@ -284,19 +296,16 @@ def learner(config, id):
             if msg["type"] == MessageType.DECIDE:
                 seq = msg["seq"]
                 learned[seq] = msg["v_val"]
-                # print(msg["v_val"])
-                # sys.stdout.flush()
                 if seq[1] not in last_seq:
                     last_seq[seq[1]] = -1
                 last_seq[seq[1]] = max(last_seq[seq[1]], seq[0])
                 start_time = time.time()
-            elif msg["type"] == MessageType.CATCHUP_VALUES: # TODO: Always multicasted to all in group -> perhaps use id
+            elif (
+                msg["type"] == MessageType.CATCHUP_VALUES
+            ):  # TODO: Always multicasted to all in group -> perhaps use id
                 for el in msg["catchup_seq"]:
                     seq = tuple(el[0])
                     learned[seq] = el[1]
-                    # print(
-                        # f"Learner {id}: Learned about {seq} with value {el[1]} "
-                    # )
         except BlockingIOError:
             pass
         if time.time() - start_time > timeout:
@@ -316,27 +325,24 @@ def learner(config, id):
                 request_msg = encode_json_msg(
                     MessageType.CATCHUP_REQUEST, missing_seq=missing_seq
                 )
-                # print(
-                    # f"Learner {id}: Wants to catchup for the following sequence {missing_seq}"
-                # )
                 s.sendto(request_msg, config["acceptors"])
 
 
 def client(config, id):
-    print("-> client ", id)
+    log_client_info(f"{id} started.")
     s = mcast_sender()
     prop_id = 0
     for value in sys.stdin:
         value = value.strip()
         prop_id += 1
-        print(
-            "client %s: sending %s to proposers with prop_id %s" % (id, value, prop_id)
+        log_client_debug(
+            "%s sending %s to proposers with prop_id %s" % (id, value, prop_id)
         )
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
         s.sendto(client_msg, config["proposers"])
-    print("client done.")
+    log_client_info(f"{id} done.")
 
 
 def unknown(config, id):
