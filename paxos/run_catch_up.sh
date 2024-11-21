@@ -26,6 +26,7 @@ sleep 1
 echo "starting learner 1..."
 
 ./learner.sh 1 "$conf" >../learn1 &
+# ./learner.sh 1 "$conf" &
 
 sleep 1
 echo "starting proposers..."
@@ -42,6 +43,7 @@ echo "starting client 1..."
 sleep 1
 echo "starting learners 2..."
 ./learner.sh 2 "$conf" >../learn2 &
+# ./learner.sh 2 "$conf" &
 
 sleep 1
 echo "starting client 2..."

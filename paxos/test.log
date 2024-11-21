@@ -1,0 +1,21 @@
+starting acceptors...
+starting learner 1...
+starting proposers...
+waiting to start clients
+starting client 1...
+-> client  1
+client 1: sending 15871 to proposers with prop_id 1
+client 1: sending 25567 to proposers with prop_id 2
+client 1: sending 24180 to proposers with prop_id 3
+client 1: sending 12793 to proposers with prop_id 4
+client 1: sending 10907 to proposers with prop_id 5
+client done.
+starting learners 2...
+starting client 2...
+-> client  2
+client 2: sending 32709 to proposers with prop_id 1
+client 2: sending 9858 to proposers with prop_id 2
+client 2: sending 24306 to proposers with prop_id 3
+client 2: sending 8192 to proposers with prop_id 4
+client 2: sending 5692 to proposers with prop_id 5
+client done.
