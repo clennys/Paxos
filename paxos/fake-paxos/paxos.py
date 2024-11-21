@@ -128,7 +128,7 @@ def parse_cfg(cfgpath):
 
 
 def acceptor(config, id):
-    log_acceptor_info(f"{id} started")
+    log_acceptor_info(f"[{id}] started")
     states = {}
     decision = {}
     r = mcast_receiver(config["acceptors"])
@@ -149,7 +149,7 @@ def acceptor(config, id):
                     v_val=states[seq]["v_val"],
                 )
                 log_acceptor_debug(
-                    f"{id} Received: {seq} of Type {MessageType.PREPARE} in Rnd: {states[seq]['rnd']}"
+                    f"[{id}] Received: {seq} of Type {MessageType.PREPARE} in Rnd: {states[seq]['rnd']}"
                 )
                 s.sendto(promise_msg, config["proposers"])
         elif msg["type"] == MessageType.ACCEPT_REQUEST:
@@ -164,7 +164,7 @@ def acceptor(config, id):
                     v_val=states[seq]["v_val"],
                 )
                 log_acceptor_debug(
-                    f"{id} Received {seq} of Type {MessageType.ACCEPT_REQUEST} in v_rnd: {states[seq]['v_rnd']} with v_val: {states[seq]['v_val']}"
+                    f"[{id}] Received {seq} of Type {MessageType.ACCEPT_REQUEST} in v_rnd: {states[seq]['v_rnd']} with v_val: {states[seq]['v_val']}"
                 )
                 if seq not in decision:
                     decision[seq] = msg["c_val"]
@@ -179,11 +179,12 @@ def acceptor(config, id):
                 catchup_msg = encode_json_msg(
                     MessageType.CATCHUP_VALUES, catchup_seq=catchup_seq
                 )
+                log_acceptor_debug(f"[{id}] send {catchup_seq} for {MessageType.CATCHUP_VALUES}")
                 s.sendto(catchup_msg, config["learners"])
 
 
 def proposer(config, id):
-    log_proposer_info(f"{id} started")
+    log_proposer_info(f"[{id}] started")
     r = mcast_receiver(config["proposers"])
     r.setblocking(False)
     s = mcast_sender()
@@ -207,7 +208,7 @@ def proposer(config, id):
                     MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
                 )
                 log_proposer_debug(
-                    f"{id} Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq: {seq}",
+                    f"[{id}] Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq: {seq}",
                 )
                 pending[seq] = time.time()
                 s.sendto(prepare_msg, config["acceptors"])
@@ -229,7 +230,7 @@ def proposer(config, id):
                             p["v_val"] for p in promises[seq] if p["v_rnd"] == k
                         )
                     log_proposer_debug(
-                        f"{id} seq {seq} Received: {MessageType.PROMISE} c_rnd: {c_rnd[seq]} c_val: {c_val[seq]}"
+                        f"[{id}] seq {seq} Received: {MessageType.PROMISE} c_rnd: {c_rnd[seq]} c_val: {c_val[seq]}"
                     )
                     accept_msg = encode_json_msg(
                         MessageType.ACCEPT_REQUEST,
@@ -260,7 +261,7 @@ def proposer(config, id):
                         MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
                     )
                     log_proposer_debug(
-                        f"{id} Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq {seq}"
+                        f"[{id}] Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq {seq}"
                     )
                     pending[seq] = time.time()
                     s.sendto(prepare_msg, config["acceptors"])
@@ -329,7 +330,7 @@ def learner(config, id):
 
 
 def client(config, id):
-    log_client_info(f"{id} started.")
+    log_client_info(f"[{id}] started.")
     s = mcast_sender()
     prop_id = 0
     for value in sys.stdin:
@@ -342,11 +343,11 @@ def client(config, id):
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
         s.sendto(client_msg, config["proposers"])
-    log_client_info(f"{id} done.")
+    log_client_info(f"[{id}] done.")
 
 
 def unknown(config, id):
-    print(f"Role not found for id: {id} and config: {config}!")
+    print(f"Role not found for id: [{id}] and config: {config}!")
 
 
 if __name__ == "__main__":
