@@ -7,7 +7,6 @@ from enum import Enum
 import math
 import time
 import random as rd
-import signal
 import sys
 from loguru import logger
 
@@ -77,7 +76,7 @@ class MessageType(Enum):
     DECIDE = "PHASE_3"
     CLIENT_VALUE = "CLIENT_VALUE"
     CATCHUP_REQUEST = "CATCHUP_REQUEST"
-    CATCHUP_VALUES = "CATCHUP_VALUE"
+    CATCHUP_VALUES = "CATCHUP_VALUES"
 
 
 def encode_json_msg(type, **kwargs):
@@ -136,50 +135,59 @@ def acceptor(config, id):
     while True:
         msg = decode_json_msg(r.recv(2**16))
         if msg["type"] == MessageType.PREPARE:
-            seq = msg["seq"]
-            if seq not in states:
-                states[seq] = {"rnd": (0, id), "v_rnd": None, "v_val": None}
-            if msg["c_rnd"] > states[seq]["rnd"]:
-                states[seq]["rnd"] = msg["c_rnd"]
+            inst = msg["inst"]
+            if inst not in states:
+                states[inst] = {
+                    "rnd": (0, id),
+                    "v_rnd": None,
+                    "v_val": None,
+                    "seq": None,
+                }
+            if msg["c_rnd"] > states[inst]["rnd"]:
+                states[inst]["rnd"] = msg["c_rnd"]
+                states[inst]["seq"] = msg["seq"]
                 promise_msg = encode_json_msg(
                     MessageType.PROMISE,
-                    seq=seq,
-                    rnd=states[seq]["rnd"],
-                    v_rnd=states[seq]["v_rnd"],
-                    v_val=states[seq]["v_val"],
+                    inst=inst,
+                    seq=states[inst]["seq"],
+                    rnd=states[inst]["rnd"],
+                    v_rnd=states[inst]["v_rnd"],
+                    v_val=states[inst]["v_val"],
                 )
                 log_acceptor_debug(
-                    f"[{id}] Received: {seq} of Type {MessageType.PREPARE} in Rnd: {states[seq]['rnd']}"
+                    f"[{id}]({inst}) Received: {states[inst]['seq']} of Type {MessageType.PREPARE} in Rnd: {states[inst]['rnd']}"
                 )
                 s.sendto(promise_msg, config["proposers"])
         elif msg["type"] == MessageType.ACCEPT_REQUEST:
-            seq = msg["seq"]
-            if msg["c_rnd"] >= states[seq]["rnd"]:
-                states[seq]["v_rnd"] = msg["c_rnd"]
-                states[seq]["v_val"] = msg["c_val"]
+            inst = msg["inst"]
+            if msg["c_rnd"] >= states[inst]["rnd"]:
+                states[inst]["v_rnd"] = msg["c_rnd"]
+                states[inst]["v_val"] = msg["c_val"]
                 accepted_msg = encode_json_msg(
                     MessageType.DECIDE,
-                    seq=seq,
-                    v_rnd=states[seq]["v_rnd"],
-                    v_val=states[seq]["v_val"],
+                    inst=inst,
+                    seq=states[inst]["seq"],
+                    v_rnd=states[inst]["v_rnd"],
+                    v_val=states[inst]["v_val"],
                 )
                 log_acceptor_debug(
-                    f"[{id}] Received {seq} of Type {MessageType.ACCEPT_REQUEST} in v_rnd: {states[seq]['v_rnd']} with v_val: {states[seq]['v_val']}"
+                    f"[{id}]({inst}) Received {states[inst]['seq']} of Type {MessageType.ACCEPT_REQUEST} in v_rnd: {states[inst]['v_rnd']} with v_val: {states[inst]['v_val']}"
                 )
-                if seq not in decision:
-                    decision[seq] = msg["c_val"]
+                if inst not in decision:
+                    decision[inst] = (msg["seq"], msg["c_val"])
                 # NOTE: Used optimization of Paxos, where acceptors send decision directly to learners
                 s.sendto(accepted_msg, config["learners"])
                 s.sendto(accepted_msg, config["proposers"])
         elif msg["type"] == MessageType.CATCHUP_REQUEST:
-            catchup_seq = []
-            for m_seq in msg["missing_seq"]:
-                m_seq = tuple(m_seq)
-                catchup_seq.append([m_seq, decision[m_seq]])
+            catchup_inst = []
+            for m_inst in msg["missing_inst"]:
+                catchup_inst.append([m_inst, decision[m_inst][0], decision[m_inst][1]])
                 catchup_msg = encode_json_msg(
-                    MessageType.CATCHUP_VALUES, catchup_seq=catchup_seq
+                    MessageType.CATCHUP_VALUES, catchup_inst=catchup_inst
                 )
-                log_acceptor_debug(f"[{id}] send {catchup_seq} for {MessageType.CATCHUP_VALUES}")
+                log_acceptor_debug(
+                    f"[{id}] send {catchup_inst} for {MessageType.CATCHUP_VALUES}"
+                )
                 s.sendto(catchup_msg, config["learners"])
 
 
@@ -189,81 +197,108 @@ def proposer(config, id):
     r.setblocking(False)
     s = mcast_sender()
     seq = (0, 0)
+    inst = -1
     c_rnd_cnt = (0, id)
     c_rnd = {}
     c_val = {}
     promises = {}
     pending = {}
-    learned = []
+    inst_learned = []
+    seq_learned = []
+    open_inst = []
 
     while True:
         try:
             msg = decode_json_msg(r.recv(2**16))
             if msg["type"] == MessageType.CLIENT_VALUE:
+                inst += 1
+                open_inst.append(inst)
                 seq = (msg["prop_id"], msg["client_id"])
                 c_rnd_cnt = (c_rnd_cnt[0] + 1, c_rnd_cnt[1])
-                c_rnd[seq] = c_rnd_cnt
-                c_val[seq] = msg["value"]
+                c_rnd[inst] = c_rnd_cnt
+                c_val[inst] = msg["value"]
                 prepare_msg = encode_json_msg(
-                    MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
+                    MessageType.PREPARE, c_rnd=c_rnd[inst], seq=seq, inst=inst
                 )
                 log_proposer_debug(
-                    f"[{id}] Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq: {seq}",
+                    f"[{id}]({inst}) Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[inst]} seq: {seq}",
                 )
                 pending[seq] = time.time()
                 s.sendto(prepare_msg, config["acceptors"])
-            elif msg["type"] == MessageType.PROMISE and msg["rnd"] == c_rnd[msg["seq"]]:
-                seq = msg["seq"]
-                if seq not in promises:
-                    promises[seq] = []
+            elif (
+                msg["type"] == MessageType.PROMISE and msg["rnd"] == c_rnd[msg["inst"]]
+            ):
+                m_inst = msg["inst"]
+                if m_inst not in promises:
+                    promises[m_inst] = []
+                promises[m_inst].append(msg)
 
-                promises[seq].append(msg)
-
+                n_promises = len(
+                    [p for p in promises[m_inst] if msg["rnd"] == p["rnd"]]
+                )
                 # TODO: Number of acceptors hardocoded -> pass number of acceptors with config?
-                n_promises = len([p for p in promises[seq] if msg["rnd"] == p["rnd"]])
                 if n_promises >= math.ceil(3 / 2):
                     k = max(
-                        (p["v_rnd"] for p in promises[seq] if p["v_rnd"]), default=None
+                        (p["v_rnd"] for p in promises[m_inst] if p["v_rnd"]),
+                        default=None,
                     )
                     if k:
-                        c_val[seq] = next(
-                            p["v_val"] for p in promises[seq] if p["v_rnd"] == k
+                        c_val[m_inst] = next(
+                            p["v_val"] for p in promises[m_inst] if p["v_rnd"] == k
                         )
                     log_proposer_debug(
-                        f"[{id}] seq {seq} Received: {MessageType.PROMISE} c_rnd: {c_rnd[seq]} c_val: {c_val[seq]}"
+                        f"[{id}]({m_inst}) seq {seq} Received: {MessageType.PROMISE} c_rnd: {c_rnd[m_inst]} c_val: {c_val[m_inst]}"
                     )
                     accept_msg = encode_json_msg(
                         MessageType.ACCEPT_REQUEST,
+                        inst=m_inst,
                         seq=seq,
-                        c_rnd=c_rnd[seq],
-                        c_val=c_val[seq],
+                        c_rnd=c_rnd[m_inst],
+                        c_val=c_val[m_inst],
                     )
                     s.sendto(accept_msg, config["acceptors"])
             elif msg["type"] == MessageType.DECIDE:
-                seq = msg["seq"]
-                if seq not in learned:
-                    learned.append(seq)
+                m_inst = msg["inst"]
+                m_seq = msg["seq"]
+                if m_inst not in inst_learned:
+                    inst_learned.append(m_inst)
+                    open_inst.remove(m_inst)
+                    pending.pop(m_seq)
+                    if m_seq not in seq_learned:
+                        seq_learned.append(m_seq)
+                log_proposer_debug(
+                    f"[{id}]({inst}) Received: {MessageType.DECIDE} val: {msg["v_val"]} seq: {msg["seq"]}"
+                )
+
+
 
         except BlockingIOError:
             pass
 
         # TODO: Ensure safety by proposing again after timeout.
         # NOTE: Client sends proposed value to both proposers.
-        for seq in list(pending.keys()):
-            if seq in learned:
-                pending.pop(seq)
-            else:
-                elapsed_time = time.time() - pending[seq]
+        for p_seq in list(pending.keys()):
+            tmp_open_inst = open_inst[:]
+            if p_seq not in seq_learned:
+                elapsed_time = time.time() - pending[p_seq]
                 if elapsed_time > rd.randint(1, 3):
+                    if len(tmp_open_inst) > 0:
+                        re_inst = tmp_open_inst.pop(0)
+                    else:
+                        inst += 1
+                        re_inst = inst
                     c_rnd_cnt = (c_rnd_cnt[0] + 1, c_rnd_cnt[1])
-                    c_rnd[seq] = c_rnd_cnt
+                    c_rnd[re_inst] = c_rnd_cnt
                     prepare_msg = encode_json_msg(
-                        MessageType.PREPARE, c_rnd=c_rnd[seq], seq=seq
+                        MessageType.PREPARE,
+                        c_rnd=c_rnd[re_inst],
+                        inst=re_inst,
+                        seq=p_seq,
                     )
                     log_proposer_debug(
-                        f"[{id}] Received: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[seq]} seq {seq}"
+                        f"[{id}]({re_inst}) Repropose: {MessageType.CLIENT_VALUE} c_rnd: {c_rnd[re_inst]} seq {p_seq}"
                     )
-                    pending[seq] = time.time()
+                    pending[p_seq] = time.time()
                     s.sendto(prepare_msg, config["acceptors"])
 
 
@@ -272,61 +307,51 @@ def learner(config, id):
     r.setblocking(False)
     s = mcast_sender()
     learned = {}
-    last_seq = {}
-    requested = []
+    last_printed = -1
+    start_time = float("inf")
+    pending = {}
 
     # TODO: Change: Not so nice workaround, but it works
-    def print_learned():
-        for key in sorted(learned, key=lambda x: (x[1], x[0])):
-            print(learned[key])
-        sys.stdout.flush()
+    # Change Sequence Number to instance number use sequence number to stop dublication
+    # Check for quorum of acceptor messages
 
-    def handle_exit_signal(signum, frame):
-        print_learned()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, handle_exit_signal)
-    signal.signal(signal.SIGTERM, handle_exit_signal)
-
-    start_time = float("inf")
     timeout = 3
     while True:
         msg = {}
         try:
             msg = decode_json_msg(r.recv(2**16))
             if msg["type"] == MessageType.DECIDE:
-                seq = msg["seq"]
-                learned[seq] = msg["v_val"]
-                if seq[1] not in last_seq:
-                    last_seq[seq[1]] = -1
-                last_seq[seq[1]] = max(last_seq[seq[1]], seq[0])
-                start_time = time.time()
-            elif (
-                msg["type"] == MessageType.CATCHUP_VALUES
-            ):  # TODO: Always multicasted to all in group -> perhaps use id
-                for el in msg["catchup_seq"]:
-                    seq = tuple(el[0])
-                    learned[seq] = el[1]
+                inst = msg["inst"]
+                if inst not in learned:
+                    learned[inst] = msg["v_val"]
+                    pending[inst] = msg["v_val"]
+                    start_time = time.time()
+                # log_learner_debug(
+                #     f"[{id}]({inst}) Received: {MessageType.DECIDE} val: {msg["v_val"]} seq: {msg["seq"]}"
+                # )
+
+            elif msg["type"] == MessageType.CATCHUP_VALUES:
+                for el in msg["catchup_inst"]:
+                    pending[el[0]] = el[2]
+
         except BlockingIOError:
             pass
-        if time.time() - start_time > timeout:
-            client_ids = max([s[1] for s in learned])
-            missing_seq = []
-            for cl in range(1, client_ids + 1):
-                if cl not in last_seq:
-                    last_seq[cl] = max(
-                        [last_seq[x] for x in last_seq]
-                    )  # Assume everbody sends the same number of client requests
-                for seq_m in range(1, last_seq[cl] + 1):
-                    if (seq_m, cl) not in list(learned) + requested:
-                        missing_seq.append((seq_m, cl))
-            if len(missing_seq) != 0:
-                requested += missing_seq
 
-                request_msg = encode_json_msg(
-                    MessageType.CATCHUP_REQUEST, missing_seq=missing_seq
-                )
-                s.sendto(request_msg, config["acceptors"])
+        if len(pending) > 0:
+            for p in sorted(list(pending.keys())):
+                if p - 1 == last_printed:
+                    print(pending[p], flush=True)
+                    pending.pop(p)
+                    last_printed = p
+
+        if time.time() - start_time > timeout:
+            max_learned = max(list(learned.keys()))
+            missing_inst = [i for i in range(0, max_learned) if i not in learned]
+            request_msg = encode_json_msg(
+                MessageType.CATCHUP_REQUEST, missing_inst=missing_inst
+            )
+            s.sendto(request_msg, config["acceptors"])
+            start_time = time.time()
 
 
 def client(config, id):
@@ -337,7 +362,7 @@ def client(config, id):
         value = value.strip()
         prop_id += 1
         log_client_debug(
-            "%s sending %s to proposers with prop_id %s" % (id, value, prop_id)
+            "[%s] sending %s to proposers with prop_id %s" % (id, value, prop_id)
         )
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
