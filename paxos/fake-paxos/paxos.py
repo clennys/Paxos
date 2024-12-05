@@ -372,7 +372,7 @@ def client(config, id):
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
-        time.sleep(1)
+        time.sleep(0.5)
         s.sendto(client_msg, config["proposers"])
     log_client_info(f"[{id}] done.")
 
