@@ -97,11 +97,13 @@ def decode_json_msg(msg):
     return parsed_msg
 
 
-def mcast_receiver(hostport):
+def mcast_receiver(hostport, buffer_size=65536):
     """create a multicast socket listening to the address"""
     recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     recv_sock.bind(hostport)
+
+    # recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buffer_size)
 
     mcast_group = struct.pack("4sl", socket.inet_aton(hostport[0]), socket.INADDR_ANY)
     recv_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mcast_group)
@@ -134,6 +136,7 @@ def acceptor(config, id):
     s = mcast_sender()
     while True:
         msg = decode_json_msg(r.recv(2**16))
+        # log_acceptor_debug(f"{[id]} {msg}")
         if msg["type"] == MessageType.PREPARE:
             inst = msg["inst"]
             if inst not in states:
@@ -210,6 +213,7 @@ def proposer(config, id):
     while True:
         try:
             msg = decode_json_msg(r.recv(2**16))
+            log_proposer_debug(f"[{id}] {msg}")
             if msg["type"] == MessageType.CLIENT_VALUE:
                 inst += 1
                 open_inst.append(inst)
@@ -229,6 +233,7 @@ def proposer(config, id):
                 msg["type"] == MessageType.PROMISE and msg["rnd"] == c_rnd[msg["inst"]]
             ):
                 m_inst = msg["inst"]
+                m_seq = msg["seq"]
                 if m_inst not in promises:
                     promises[m_inst] = []
                 promises[m_inst].append(msg)
@@ -247,12 +252,12 @@ def proposer(config, id):
                             p["v_val"] for p in promises[m_inst] if p["v_rnd"] == k
                         )
                     log_proposer_debug(
-                        f"[{id}]({m_inst}) seq {seq} Received: {MessageType.PROMISE} c_rnd: {c_rnd[m_inst]} c_val: {c_val[m_inst]}"
+                        f"[{id}]({m_inst}) Received: {MessageType.PREPARE} c_rnd: {c_rnd[m_inst]} c_val: {c_val[m_inst]} seq {m_seq}"
                     )
                     accept_msg = encode_json_msg(
                         MessageType.ACCEPT_REQUEST,
                         inst=m_inst,
-                        seq=seq,
+                        seq=m_seq,
                         c_rnd=c_rnd[m_inst],
                         c_val=c_val[m_inst],
                     )
@@ -267,7 +272,7 @@ def proposer(config, id):
                     if m_seq not in seq_learned:
                         seq_learned.append(m_seq)
                 log_proposer_debug(
-                    f"[{id}]({inst}) Received: {MessageType.DECIDE} val: {msg["v_val"]} seq: {msg["seq"]}"
+                    f"[{id}]({m_inst}) Received: {MessageType.DECIDE} val: {msg["v_val"]} seq: {m_seq}"
                 )
 
 
@@ -281,7 +286,7 @@ def proposer(config, id):
             tmp_open_inst = open_inst[:]
             if p_seq not in seq_learned:
                 elapsed_time = time.time() - pending[p_seq]
-                if elapsed_time > rd.randint(1, 3):
+                if elapsed_time > rd.randint(1, 3) * 1000:
                     if len(tmp_open_inst) > 0:
                         re_inst = tmp_open_inst.pop(0)
                     else:
@@ -315,7 +320,7 @@ def learner(config, id):
     # Change Sequence Number to instance number use sequence number to stop dublication
     # Check for quorum of acceptor messages
 
-    timeout = 3
+    timeout = 499999
     while True:
         msg = {}
         try:
@@ -367,6 +372,7 @@ def client(config, id):
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
+        time.sleep(1)
         s.sendto(client_msg, config["proposers"])
     log_client_info(f"[{id}] done.")
 

@@ -1,0 +1,16 @@
+[13:10:14] DEBUG [PROPOSER] [1](730) Received: MessageType.CLIENT_VALUE c_rnd: (731, 1) seq: (345, 2)
+[13:10:14] DEBUG [ACCEPTOR] [3] {'type': <MessageType.PREPARE: 'PHASE_1A'>, 'c_rnd': (731, 1), 'seq': (345, 2), 'inst': 730}
+[13:10:14] DEBUG [ACCEPTOR] [3](730) Received: (345, 2) of Type MessageType.PREPARE in Rnd: (731, 1)
+[13:10:14] DEBUG [ACCEPTOR] [1] {'type': <MessageType.PREPARE: 'PHASE_1A'>, 'c_rnd': (731, 1), 'seq': (345, 2), 'inst': 730}
+[13:10:14] DEBUG [ACCEPTOR] [2] {'type': <MessageType.PREPARE: 'PHASE_1A'>, 'c_rnd': (731, 1), 'seq': (345, 2), 'inst': 730}
+[13:10:14] DEBUG [ACCEPTOR] [1](730) Received: (345, 2) of Type MessageType.PREPARE in Rnd: (731, 1)
+[13:10:14] DEBUG [ACCEPTOR] [2](730) Received: (345, 2) of Type MessageType.PREPARE in Rnd: (731, 1)
+[13:10:14] DEBUG [PROPOSER] [2](730) Received: MessageType.CLIENT_VALUE c_rnd: (731, 2) seq: (345, 2)
+[13:10:14] DEBUG [ACCEPTOR] [3] {'type': <MessageType.PREPARE: 'PHASE_1A'>, 'c_rnd': (731, 2), 'seq': (345, 2), 'inst': 730}
+[13:10:14] DEBUG [ACCEPTOR] [3](730) Received: (345, 2) of Type MessageType.PREPARE in Rnd: (731, 2)
+[13:10:14] DEBUG [ACCEPTOR] [2] {'type': <MessageType.PREPARE: 'PHASE_1A'>, 'c_rnd': (731, 2), 'seq': (345, 2), 'inst': 730}
+[13:10:14] DEBUG [ACCEPTOR] [1] {'type': <MessageType.PREPARE: 'PHASE_1A'>, 'c_rnd': (731, 2), 'seq': (345, 2), 'inst': 730}
+[13:10:14] DEBUG [ACCEPTOR] [2](730) Received: (345, 2) of Type MessageType.PREPARE in Rnd: (731, 2)
+[13:10:14] DEBUG [ACCEPTOR] [1](730) Received: (345, 2) of Type MessageType.PREPARE in Rnd: (731, 2)
+[13:10:19] DEBUG [PROPOSER] [1] {'type': <MessageType.PROMISE: 'PHASE_1B'>, 'inst': 730, 'seq': (345, 2), 'rnd': (731, 2), 'v_rnd': None, 'v_val': None}
+[13:10:19] DEBUG [PROPOSER] [2] {'type': <MessageType.PROMISE: 'PHASE_1B'>, 'inst': 730, 'seq': (345, 2), 'rnd': (731, 2), 'v_rnd': None, 'v_val': None}
