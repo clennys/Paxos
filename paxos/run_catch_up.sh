@@ -45,11 +45,11 @@ echo "starting learners 2..."
 ./learner.sh 2 "$conf" >../learn2 &
 # ./learner.sh 2 "$conf" &
 
-sleep 1
+sleep 3
 echo "starting client 2..."
 ./client.sh 2 "$conf" <../prop2 &
 
-sleep 5
+sleep $2
 
 pkill -f "$conf"
 wait

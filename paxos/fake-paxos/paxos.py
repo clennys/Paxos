@@ -276,7 +276,6 @@ def proposer(config, id):
                 )
 
 
-
         except BlockingIOError:
             pass
 
@@ -286,7 +285,7 @@ def proposer(config, id):
             tmp_open_inst = open_inst[:]
             if p_seq not in seq_learned:
                 elapsed_time = time.time() - pending[p_seq]
-                if elapsed_time > rd.randint(1, 3) * 1000:
+                if elapsed_time > rd.randint(1, 3):
                     if len(tmp_open_inst) > 0:
                         re_inst = tmp_open_inst.pop(0)
                     else:
@@ -320,7 +319,7 @@ def learner(config, id):
     # Change Sequence Number to instance number use sequence number to stop dublication
     # Check for quorum of acceptor messages
 
-    timeout = 499999
+    timeout = 3
     while True:
         msg = {}
         try:
