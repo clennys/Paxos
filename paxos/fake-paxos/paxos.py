@@ -272,7 +272,7 @@ def proposer(config, id):
                     if m_seq not in seq_learned:
                         seq_learned.append(m_seq)
                 log_proposer_debug(
-                    f"[{id}]({m_inst}) Received: {MessageType.DECIDE} val: {msg["v_val"]} seq: {m_seq}"
+                    f"[{id}]({m_inst}) Received: {MessageType.DECIDE} val: {msg['v_val']} seq: {m_seq}"
                 )
 
 
@@ -371,7 +371,7 @@ def client(config, id):
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
-        time.sleep(0.5)
+        time.sleep(0.3)
         s.sendto(client_msg, config["proposers"])
     log_client_info(f"[{id}] done.")
 
