@@ -97,13 +97,12 @@ def decode_json_msg(msg):
     return parsed_msg
 
 
-def mcast_receiver(hostport, buffer_size=65536):
+def mcast_receiver(hostport):
     """create a multicast socket listening to the address"""
     recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     recv_sock.bind(hostport)
 
-    # recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, buffer_size)
 
     mcast_group = struct.pack("4sl", socket.inet_aton(hostport[0]), socket.INADDR_ANY)
     recv_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mcast_group)
@@ -241,7 +240,6 @@ def proposer(config, id):
                 n_promises = len(
                     [p for p in promises[m_inst] if msg["rnd"] == p["rnd"]]
                 )
-                # TODO: Number of acceptors hardocoded -> pass number of acceptors with config?
                 if n_promises >= math.ceil(3 / 2):
                     k = max(
                         (p["v_rnd"] for p in promises[m_inst] if p["v_rnd"]),
@@ -279,8 +277,6 @@ def proposer(config, id):
         except BlockingIOError:
             pass
 
-        # TODO: Ensure safety by proposing again after timeout.
-        # NOTE: Client sends proposed value to both proposers.
         for p_seq in list(pending.keys()):
             tmp_open_inst = open_inst[:]
             if p_seq not in seq_learned:
@@ -314,10 +310,6 @@ def learner(config, id):
     last_printed = -1
     start_time = float("inf")
     pending = {}
-
-    # TODO: Change: Not so nice workaround, but it works
-    # Change Sequence Number to instance number use sequence number to stop dublication
-    # Check for quorum of acceptor messages
 
     timeout = 3
     while True:
@@ -371,7 +363,7 @@ def client(config, id):
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
-        time.sleep(0.3)
+        time.sleep(0.1)
         s.sendto(client_msg, config["proposers"])
     log_client_info(f"[{id}] done.")
 
