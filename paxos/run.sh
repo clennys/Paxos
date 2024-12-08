@@ -4,7 +4,6 @@ projdir="$1"
 conf="$(pwd)/paxos.conf"
 n="$2"
 value=$(echo "0.15 * $2" | bc -l)  # Use bc for floating-point calculation
-echo $value
 
 
 if [[ x$projdir == "x" || x$n == "x" ]]; then

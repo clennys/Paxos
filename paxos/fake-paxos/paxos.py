@@ -103,7 +103,6 @@ def mcast_receiver(hostport):
     recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     recv_sock.bind(hostport)
 
-
     mcast_group = struct.pack("4sl", socket.inet_aton(hostport[0]), socket.INADDR_ANY)
     recv_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mcast_group)
     return recv_sock
@@ -135,7 +134,6 @@ def acceptor(config, id):
     s = mcast_sender()
     while True:
         msg = decode_json_msg(r.recv(2**16))
-        # log_acceptor_debug(f"{[id]} {msg}")
         if msg["type"] == MessageType.PREPARE:
             inst = msg["inst"]
             if inst not in states:
@@ -184,6 +182,7 @@ def acceptor(config, id):
             catchup_inst = []
             for m_inst in msg["missing_inst"]:
                 catchup_inst.append([m_inst, decision[m_inst][0], decision[m_inst][1]])
+            if len(catchup_inst) > 0:
                 catchup_msg = encode_json_msg(
                     MessageType.CATCHUP_VALUES, catchup_inst=catchup_inst
                 )
@@ -212,7 +211,6 @@ def proposer(config, id):
     while True:
         try:
             msg = decode_json_msg(r.recv(2**16))
-            log_proposer_debug(f"[{id}] {msg}")
             if msg["type"] == MessageType.CLIENT_VALUE:
                 inst += 1
                 open_inst.append(inst)
@@ -273,7 +271,6 @@ def proposer(config, id):
                     f"[{id}]({m_inst}) Received: {MessageType.DECIDE} val: {msg['v_val']} seq: {m_seq}"
                 )
 
-
         except BlockingIOError:
             pass
 
@@ -281,7 +278,7 @@ def proposer(config, id):
             tmp_open_inst = open_inst[:]
             if p_seq not in seq_learned:
                 elapsed_time = time.time() - pending[p_seq]
-                if elapsed_time > rd.randint(1, 3):
+                if elapsed_time > rd.randint(1, 2):
                     if len(tmp_open_inst) > 0:
                         re_inst = tmp_open_inst.pop(0)
                     else:
@@ -308,10 +305,10 @@ def learner(config, id):
     s = mcast_sender()
     learned = {}
     last_printed = -1
-    start_time = float("inf")
+    start_time = time.time()
     pending = {}
 
-    timeout = 3
+    timeout = 1
     while True:
         msg = {}
         try:
@@ -321,7 +318,7 @@ def learner(config, id):
                 if inst not in learned:
                     learned[inst] = msg["v_val"]
                     pending[inst] = msg["v_val"]
-                    start_time = time.time()
+                    # start_time = time.time()
                 # log_learner_debug(
                 #     f"[{id}]({inst}) Received: {MessageType.DECIDE} val: {msg["v_val"]} seq: {msg["seq"]}"
                 # )
@@ -329,6 +326,7 @@ def learner(config, id):
             elif msg["type"] == MessageType.CATCHUP_VALUES:
                 for el in msg["catchup_inst"]:
                     pending[el[0]] = el[2]
+                    learned[el[0]] = el[2]
 
         except BlockingIOError:
             pass
@@ -341,12 +339,17 @@ def learner(config, id):
                     last_printed = p
 
         if time.time() - start_time > timeout:
-            max_learned = max(list(learned.keys()))
-            missing_inst = [i for i in range(0, max_learned) if i not in learned]
-            request_msg = encode_json_msg(
-                MessageType.CATCHUP_REQUEST, missing_inst=missing_inst
-            )
-            s.sendto(request_msg, config["acceptors"])
+            if learned:
+                max_learned = max(list(learned.keys()))
+                missing_inst = [i for i in range(0, max_learned) if i not in learned]
+                if len(missing_inst) > 0:
+                    request_msg = encode_json_msg(
+                        MessageType.CATCHUP_REQUEST, missing_inst=missing_inst
+                    )
+                    s.sendto(request_msg, config["acceptors"])
+                    # log_learner_debug(
+                    #     f"[{id}] SEND: {MessageType.CATCHUP_REQUEST} missing: {missing_inst}"
+                    # )
             start_time = time.time()
 
 
@@ -363,7 +366,7 @@ def client(config, id):
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
-        time.sleep(0.1)
+        time.sleep(0.05)
         s.sendto(client_msg, config["proposers"])
     log_client_info(f"[{id}] done.")
 
