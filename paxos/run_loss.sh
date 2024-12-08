@@ -6,7 +6,7 @@ LOSS=0.1
 projdir="$1"
 conf="$(pwd)/paxos.conf"
 n="$2"
-
+value=$(echo "0.15 * $2" | bc -l)  # Use bc for floating-point calculation
 if [[ x$projdir == "x" || x$n == "x" ]]; then
     echo "Usage: $0 <project dir> <number of values per proposer>"
     exit 1
@@ -46,7 +46,7 @@ echo "starting clients..."
 ./client.sh 1 "$conf" <../prop1 &
 ./client.sh 2 "$conf" <../prop2 &
 
-sleep 5
+sleep $value
 
 pkill -f "$conf"
 wait

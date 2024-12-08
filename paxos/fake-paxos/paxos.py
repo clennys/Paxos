@@ -118,8 +118,12 @@ def parse_cfg(cfgpath):
     cfg = {}
     with open(cfgpath, "r") as cfgfile:
         for line in cfgfile:
-            (role, host, port) = line.split()
-            cfg[role] = (host, int(port))
+            if "timeout" in line:
+                (var, val) = line.split()
+                cfg[var] = float(val)
+            else:
+                (role, host, port) = line.split()
+                cfg[role] = (host, int(port))
     return cfg
 
 
@@ -181,7 +185,10 @@ def acceptor(config, id):
         elif msg["type"] == MessageType.CATCHUP_REQUEST:
             catchup_inst = []
             for m_inst in msg["missing_inst"]:
-                catchup_inst.append([m_inst, decision[m_inst][0], decision[m_inst][1]])
+                if m_inst in decision:
+                    catchup_inst.append(
+                        [m_inst, decision[m_inst][0], decision[m_inst][1]]
+                    )
             if len(catchup_inst) > 0:
                 catchup_msg = encode_json_msg(
                     MessageType.CATCHUP_VALUES, catchup_inst=catchup_inst
@@ -264,7 +271,8 @@ def proposer(config, id):
                 if m_inst not in inst_learned:
                     inst_learned.append(m_inst)
                     open_inst.remove(m_inst)
-                    pending.pop(m_seq)
+                    if m_seq in pending:
+                        pending.pop(m_seq)
                     if m_seq not in seq_learned:
                         seq_learned.append(m_seq)
                 log_proposer_debug(
@@ -366,7 +374,7 @@ def client(config, id):
         client_msg = encode_json_msg(
             MessageType.CLIENT_VALUE, value=value, client_id=id, prop_id=prop_id
         )
-        time.sleep(0.05)
+        time.sleep(config["timeout"])
         s.sendto(client_msg, config["proposers"])
     log_client_info(f"[{id}] done.")
 

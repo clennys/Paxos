@@ -1,9 +1,17 @@
 # Paxos
 
 ## Disclaimer
-In my implementation I use a non-blocking UDP socket and depending on the test computer this could lead to buffer overflows.
-To prevent this from happening I introduced a timeout of 0.1 seconds in between messages that go from the client to the proposer.
-Please keep this in mind when testing my implementation and if necessary increase the timeout until paxos is getting killed.
+In my implementation I use a non-blocking UDP socket. During my testing in a VM, I encountered a buffer overflow, in order for the code to work on any host and number of messages.
+I introduced a timeout of 0.1 seconds (tested up to 10'000 messages including message loss) between each of the clients messages to the proposer.
+This can be set in the paxos.conf file as follows:
+```
+clients  239.0.0.1 5000
+proposers 239.0.0.1 6000
+acceptors 239.0.0.1 7000
+learners   239.0.0.1 8000
+timeout 0.1
+```
+Please keep this in mind when testing my implementation and if necessary increase the timeout until paxos is killed.
 
 ## Dependencies
 You need bash and basic unix tools (grep, sed, etc).
@@ -18,7 +26,8 @@ ifconfig IFACE multicast
 where `IFACE` is the name of the interface. Using a connected cable/wifi interface probably will not have this problem (e.g. "eth0", "wlan0").
 
 ### Python 
-- **Option 1**: I only added a single package to the project, which is called [loguruan](https://github.com/Delgan/loguru) and can be installed with:
+Make sure you have python12 or higher installed and use one of the following two options to install the dependencies:
+- **Option 1**: I only added a single package to the project, which is called [loguru](https://github.com/Delgan/loguru) and can be installed with:
 ```bash
 pip install loguru
 ```
@@ -33,14 +42,25 @@ poetry shell
 
 ## Logging output
 By using loguru you can control the level of output as follows
-
 ```bash
-# WIthout debugging messages
+# Without debugging messages
 export LOGURU_LEVEL="INFO"
 
-# Inculding debug messages
+# Including debug messages
 export LOGURU_LEVEL="DEBUG"
 ```
+## Run Program
+In term of structure it is identical to the one provided by the project.
+You can run the scrits inside the paxos folder as follows
+```
+./run.sh fake-paxos 100
+./check_all.sh
+```
+## Timeouts
+I introduce three different timeouts in my implementation:
+- As described in the Disclaimer the client sends in the define interval each message to the proposer.
+- The learner tries to catch up every second, if there is an instance number missing, which is smaller than the highest intance number received
+- The Proposer tries to repropose a message after one or two seconds (chosen randomly), if no consensus was reached for the clients value.
 
 ## How to run the tests
 
@@ -61,7 +81,4 @@ cd ~/paxos-tests/
 3) After a run ends, run `check_all.sh` to see if everything went OK.
 "Test 3" might FAIL in some cases, but with few proposed values and no message loss it should also be OK.
 
-```
-./run.sh fake-paxos 100
-./check_all.sh
-```
+
